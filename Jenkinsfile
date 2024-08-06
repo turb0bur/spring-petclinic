@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git 'git@github.com:turb0bur/spring-petclinic.git'
+                git url: 'git@github.com:turb0bur/spring-petclinic.git', credentialsId: 'github-turb0bur'
             }
         }
         stage('Build Docker Image') {
