@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         RELEASE_VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
-        SPRING_PROFILES_ACTIVE = 'testing' // Set the profile for Jenkins pipeline
+        SPRING_PROFILES_ACTIVE = 'testing'
     }
 
     parameters {
@@ -11,6 +11,21 @@ pipeline {
             name: 'RUN_TESTS',
             defaultValue: false,
             description: 'Should tests be run'
+       )
+       string(
+           name: 'AWS_REGION',
+           defaultValue: 'eu-central-1',
+           description: 'AWS region'
+       )
+       string(
+           name: 'ECR_REPOSITORY',
+           defaultValue: 'turb0bur/spring-petclinic',
+           description: 'AWS ECR repository name'
+       )
+       string(
+           name: 'AWS_ACCOUNT_ID',
+           defaultValue: '123456789000',
+           description: 'AWS account ID'
        )
     }
 
@@ -39,22 +54,28 @@ pipeline {
                 sh 'docker build -t spring-petclinic:${RELEASE_VERSION} -f Dockerfile .'
             }
         }
-        stage('Run Application') {
+        stage('Set ECR URI') {
             steps {
-                sh 'docker run -d --name spring-petclinic -p 8081:8081 -e SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE} spring-petclinic:${RELEASE_VERSION}'
+                script {
+                    env.ECR_URI = "${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/${params.ECR_REPOSITORY}"
+                }
             }
         }
-    }
-    post {
-        always {
-            script {
+        stage('Login to ECR') {
+            steps {
                 sh '''
-                        CONTAINER_ID=$(docker ps -aq -f name=spring-petclinic)
-                        if [ -n "$CONTAINER_ID" ]; then
-                            docker stop spring-petclinic || true
-                            docker rm -f spring-petclinic
-                        fi
-                    '''
+                    aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${ECR_URI}
+                '''
+            }
+        }
+        stage('Tag Docker Image') {
+            steps {
+                sh 'docker tag spring-petclinic:${RELEASE_VERSION} ${ECR_URI}:${RELEASE_VERSION}'
+            }
+        }
+        stage('Push Docker Image to ECR') {
+            steps {
+                sh 'docker push ${ECR_URI}:${RELEASE_VERSION}'
             }
         }
     }
