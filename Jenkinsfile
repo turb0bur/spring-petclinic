@@ -64,7 +64,13 @@ pipeline {
         }
         stage('Login to ECR') {
             steps {
-                withAWS(credentials: "${env.AWS_CREDENTIALS}", region: "${params.AWS_REGION}") {
+                withCredentials([
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
                     sh """
                         aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${env.ECR_URI}
                     """
@@ -73,12 +79,16 @@ pipeline {
         }
         stage('Tag Docker Image') {
             steps {
-                sh 'docker tag spring-petclinic:${RELEASE_VERSION} ${env.ECR_URI}:${RELEASE_VERSION}'
+                sh """
+                    docker tag spring-petclinic:${RELEASE_VERSION} ${env.ECR_URI}:${RELEASE_VERSION}
+                """
             }
         }
         stage('Push Docker Image to ECR') {
             steps {
-                sh 'docker push ${env.ECR_URI}:${RELEASE_VERSION}'
+                sh """
+                    docker push ${env.ECR_URI}:${RELEASE_VERSION}
+                """
             }
         }
     }
