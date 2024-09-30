@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         RELEASE_VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
-        SPRING_PROFILES_ACTIVE = 'testing'
+        SPRING_PROFILES_ACTIVE = 'dev'
         AWS_CREDENTIALS = 'aws-credentials'
     }
 
