@@ -23,11 +23,6 @@ pipeline {
            defaultValue: 'turb0bur/spring-petclinic',
            description: 'AWS ECR repository name'
        )
-       string(
-           name: 'AWS_ACCOUNT_ID',
-           defaultValue: '123456789000',
-           description: 'AWS account ID'
-       )
     }
 
     stages {
@@ -55,10 +50,25 @@ pipeline {
                 sh 'docker build -t spring-petclinic:${RELEASE_VERSION} -f Dockerfile .'
             }
         }
+        stage('Get AWS Account ID') {
+            steps {
+                withCredentials([
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    script {
+                        env.AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()
+                    }
+                }
+            }
+        }
         stage('Set ECR URI') {
             steps {
                 script {
-                    env.ECR_URI = "${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/${params.ECR_REPOSITORY}"
+                    env.ECR_URI = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/${params.ECR_REPOSITORY}"
                 }
             }
         }
