@@ -3,8 +3,13 @@ pipeline {
 
     environment {
         RELEASE_VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
-        SPRING_PROFILES_ACTIVE = 'dev'
+        SPRING_PROFILES_ACTIVE = "${params.ENVIRONMENT}"
         AWS_CREDENTIALS = 'aws-credentials'
+        ECS_CLUSTER_NAME = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-cluster"
+        ECS_SERVICE_NAME = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-service"
+        AWS_ECS_TASK_EXECUTION_ROLE = "${params.AWS_REGION}-${params.ENVIRONMENT}-ecs-task-execution-role"
+        AWS_ECS_TASK_DEFINITION_FAMILY = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-task"
+        DB_CREDENTIALS_PARAM = "/${params.ENVIRONMENT}/petclinic/db/credentials"
     }
 
     parameters {
@@ -17,6 +22,11 @@ pipeline {
            name: 'AWS_REGION',
            defaultValue: 'eu-central-1',
            description: 'AWS region'
+       )
+       choice(
+           name: 'ENVIRONMENT',
+           choices: ['dev', 'prod'],
+           description: 'Select the environment'
        )
        string(
            name: 'ECR_REPOSITORY',
@@ -99,6 +109,135 @@ pipeline {
                 sh """
                     docker push ${env.ECR_URI}:${RELEASE_VERSION}
                 """
+            }
+        }
+        stage('Deregister Current Task Definition') {
+            steps {
+                withCredentials([
+                        aws(
+                            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                            credentialsId: "${AWS_CREDENTIALS}",
+                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                        )
+                ]) {
+                    sh """
+                        CURRENT_TASK_DEFINITION_FAMILY=\$(aws ecs describe-task-definition \\
+                            --task-definition ${env.TASK_DEFINITION_FAMILY} \\
+                            --query 'taskDefinition.taskDefinitionArn' \\
+                            --output text)
+
+                        aws ecs deregister-task-definition \\
+                            --task-definition \${CURRENT_TASK_DEFINITION_FAMILY}
+                    """
+                }
+            }
+        }
+        stage('Fetch DB Credentials') {
+            steps {
+                withCredentials([
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    script {
+                        def dbCredentials = sh(script: "aws ssm get-parameter --name ${env.DB_CREDENTIALS_PARAM} --with-decryption --query 'Parameter.Value' --output text", returnStdout: true).trim()
+                        def dbCredentialsJson = readJSON text: dbCredentials
+                        env.DB_USER = dbCredentialsJson.user
+                        env.DB_PASSWORD = dbCredentialsJson.password
+                        env.DB_NAME = dbCredentialsJson.name
+                    }
+                }
+            }
+        }
+        stage('Register Task Definition') {
+            steps {
+                withCredentials([
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    script {
+                        def containerDefinition = """
+                        [
+                           {
+                              "name": "${env.CONTAINER_NAME}",
+                              "image": "${env.ECR_URI}:${RELEASE_VERSION}",
+                              "memory": 1024,
+                              "cpu": 1000,
+                              "essential": true,
+                              "portMappings": [
+                                 {
+                                    "containerPort": ${env.CONTAINER_PORT},
+                                    "hostPort": 0,
+                                    "protocol": "tcp"
+                                 }
+                              ],
+                              "environment": [
+                                 {
+                                    "name": "DB_HOST",
+                                    "value": "${env.DB_HOST}"
+                                 },
+                                 {
+                                    "name": "DB_PORT",
+                                    "value": "${env.DB_PORT}"
+                                 },
+                                 {
+                                    "name": "DB_NAME",
+                                    "value": "${env.DB_NAME}"
+                                 },
+                                 {
+                                    "name": "DB_USER",
+                                    "value": "${env.DB_USER}"
+                                 },
+                                 {
+                                    "name": "DB_PASSWORD",
+                                    "value": "${env.DB_PASSWORD}"
+                                 },
+                                 {
+                                    "name": "SPRING_PROFILES_ACTIVE",
+                                    "value": "${env.SPRING_PROFILES_ACTIVE}"
+                                 }
+                              ]
+                           }
+                        ]
+                        """
+                        def taskDefinition = """
+                        {
+                            "family": "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-task",
+                            "networkMode": "bridge",
+                            "requiresCompatibilities": ["EC2"],
+                            "executionRoleArn": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.AWS_ECS_TASK_EXECUTION_ROLE}",
+                            "taskRoleArn": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.AWS_ECS_TASK_EXECUTION_ROLE}",
+                            "containerDefinitions": ${containerDefinition}
+                        }
+                        """
+                        writeFile file: 'petclinic-task-definition.json', text: taskDefinition
+                        sh 'aws ecs register-task-definition --cli-input-json file://petclinic-task-definition.json'
+                    }
+                }
+            }
+        }
+        stage('Deploy to ECS') {
+            steps {
+                withCredentials([
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    sh """
+                        aws ecs update-service \\
+                            --cluster ${env.ECS_CLUSTER_NAME} \\
+                            --service ${env.ECS_SERVICE_NAME} \\
+                            --force-new-deployment \\
+                            --region ${params.AWS_REGION}
+                    """
+                }
             }
         }
     }
