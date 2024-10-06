@@ -164,14 +164,14 @@ pipeline {
                         def containerDefinition = """
                         [
                            {
-                              "name": "${env.CONTAINER_NAME}",
+                              "name": "${env.ECS_CONTAINER_NAME}",
                               "image": "${env.ECR_URI}:${RELEASE_VERSION}",
                               "memory": 1024,
                               "cpu": 1000,
                               "essential": true,
                               "portMappings": [
                                  {
-                                    "containerPort": ${env.CONTAINER_PORT},
+                                    "containerPort": ${env.ECS_CONTAINER_PORT},
                                     "hostPort": 0,
                                     "protocol": "tcp"
                                  }
@@ -186,20 +186,22 @@ pipeline {
                                     "value": "${env.DB_PORT}"
                                  },
                                  {
+                                    "name": "SPRING_PROFILES_ACTIVE",
+                                    "value": "${env.SPRING_PROFILES_ACTIVE}"
+                                 }
+                              ],
+                              "secrets": [
+                                 {
                                     "name": "DB_NAME",
-                                    "value": "${env.DB_NAME}"
+                                    "valueFrom": "arn:aws:ssm:${params.AWS_REGION}:${env.AWS_ACCOUNT_ID}:parameter/${params.ENVIRONMENT}/petclinic/db/name"
                                  },
                                  {
                                     "name": "DB_USER",
-                                    "value": "${env.DB_USER}"
+                                    "valueFrom": "arn:aws:ssm:${params.AWS_REGION}:${env.AWS_ACCOUNT_ID}:parameter/${params.ENVIRONMENT}/petclinic/db/user"
                                  },
                                  {
                                     "name": "DB_PASSWORD",
-                                    "value": "${env.DB_PASSWORD}"
-                                 },
-                                 {
-                                    "name": "SPRING_PROFILES_ACTIVE",
-                                    "value": "${env.SPRING_PROFILES_ACTIVE}"
+                                    "valueFrom": "arn:aws:ssm:${params.AWS_REGION}:${env.AWS_ACCOUNT_ID}:parameter/${params.ENVIRONMENT}/petclinic/db/password"
                                  }
                               ]
                            }
