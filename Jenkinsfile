@@ -10,6 +10,7 @@ pipeline {
         AWS_ECS_TASK_EXECUTION_ROLE = "${params.AWS_REGION}-${params.ENVIRONMENT}-ecs-task-execution-role"
         AWS_ECS_TASK_DEFINITION_FAMILY = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-task"
         DB_CREDENTIALS_PARAM = "/${params.ENVIRONMENT}/petclinic/db/credentials"
+        RDS_INSTANCE_IDENTIFIER = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-db"
     }
 
     parameters {
@@ -151,11 +152,17 @@ pipeline {
                     )
                 ]) {
                     script {
-                        def dbCredentials = sh(script: "aws ssm get-parameter --name ${env.DB_CREDENTIALS_PARAM} --with-decryption --query 'Parameter.Value' --output text", returnStdout: true).trim()
-                        def dbCredentialsJson = readJSON text: dbCredentials
-                        env.DB_USER = dbCredentialsJson.user
-                        env.DB_PASSWORD = dbCredentialsJson.password
-                        env.DB_NAME = dbCredentialsJson.name
+                        def rdsInfo = sh(
+                            script: "aws rds describe-db-instances \
+                                        --db-instance-identifier ${env.RDS_INSTANCE_IDENTIFIER} \
+                                        --query 'DBInstances[0].Endpoint.[Address,Port]' \
+                                        --output json",
+                            returnStdout: true
+                        ).trim()
+                        def rdsJson = new JsonSlurper().parseText(rdsInfo)
+
+                        env.DB_HOST = rdsJson[0]
+                        env.DB_PORT = rdsJson[1]
                     }
                 }
             }
