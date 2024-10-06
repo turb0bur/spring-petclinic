@@ -57,7 +57,23 @@ pipeline {
         }
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t spring-petclinic:${RELEASE_VERSION} -f Dockerfile .'
+                withCredentials([
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    script {
+                        if (!imageExistsInECR()) {
+                            sh """
+                                docker build -t ${env.ECR_URI}:${RELEASE_VERSION} -f Dockerfile .
+                            """
+                        } else {
+                            echo "Image with tag ${RELEASE_VERSION} already exists in ECR. Skipping build."
+                        }
+                    }
+                }
             }
         }
         stage('Get AWS Account ID') {
@@ -106,33 +122,26 @@ pipeline {
         }
         stage('Push Docker Image to ECR') {
             steps {
-                sh """
-                    docker push ${env.ECR_URI}:${RELEASE_VERSION}
-                """
-            }
-        }
-        stage('Deregister Current Task Definition') {
-            steps {
                 withCredentials([
-                        aws(
-                            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                            credentialsId: "${AWS_CREDENTIALS}",
-                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-                        )
+                    aws(
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        credentialsId: "${AWS_CREDENTIALS}",
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
                 ]) {
-                    sh """
-                        CURRENT_TASK_DEFINITION_FAMILY=\$(aws ecs describe-task-definition \\
-                            --task-definition ${env.TASK_DEFINITION_FAMILY} \\
-                            --query 'taskDefinition.taskDefinitionArn' \\
-                            --output text)
-
-                        aws ecs deregister-task-definition \\
-                            --task-definition \${CURRENT_TASK_DEFINITION_FAMILY}
-                    """
+                    script {
+                        if (!imageExistsInECR()) {
+                            sh """
+                                docker push ${env.ECR_URI}:${RELEASE_VERSION}
+                            """
+                        } else {
+                            echo "Image with tag ${RELEASE_VERSION} already exists in ECR. Skipping push."
+                        }
+                    }
                 }
             }
         }
-        stage('Fetch DB Credentials') {
+        stage('Fetch RDS Endpoint and Port') {
             steps {
                 withCredentials([
                     aws(
@@ -249,4 +258,17 @@ pipeline {
             cleanWs()
         }
     }
+}
+
+def imageExistsInECR() {
+    return sh(
+        script: """
+            aws ecr describe-images \
+                --repository-name ${params.ECR_REPOSITORY} \
+                --image-ids imageTag=${RELEASE_VERSION} \
+                --region ${params.AWS_REGION} \
+                > /dev/null 2>&1
+        """,
+        returnStatus: true
+    ) == 0
 }
