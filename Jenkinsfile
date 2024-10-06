@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+
 pipeline {
     agent any
 
@@ -7,8 +9,10 @@ pipeline {
         AWS_CREDENTIALS = 'aws-credentials'
         ECS_CLUSTER_NAME = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-cluster"
         ECS_SERVICE_NAME = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-service"
-        AWS_ECS_TASK_EXECUTION_ROLE = "${params.AWS_REGION}-${params.ENVIRONMENT}-ecs-task-execution-role"
-        AWS_ECS_TASK_DEFINITION_FAMILY = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-task"
+        ECS_TASK_EXECUTION_ROLE = "${params.AWS_REGION}-${params.ENVIRONMENT}-ecs-task-execution-role"
+        ECS_TASK_DEFINITION_FAMILY = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-task"
+        ECS_CONTAINER_NAME = "petclinic"
+        ECS_CONTAINER_PORT = 8081
         DB_CREDENTIALS_PARAM = "/${params.ENVIRONMENT}/petclinic/db/credentials"
         RDS_INSTANCE_IDENTIFIER = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-db"
     }
@@ -228,13 +232,19 @@ pipeline {
                             "family": "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-task",
                             "networkMode": "bridge",
                             "requiresCompatibilities": ["EC2"],
-                            "executionRoleArn": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.AWS_ECS_TASK_EXECUTION_ROLE}",
-                            "taskRoleArn": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.AWS_ECS_TASK_EXECUTION_ROLE}",
+                            "executionRoleArn": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.ECS_TASK_EXECUTION_ROLE}",
+                            "taskRoleArn": "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.ECS_TASK_EXECUTION_ROLE}",
                             "containerDefinitions": ${containerDefinition}
                         }
                         """
                         writeFile file: 'petclinic-task-definition.json', text: taskDefinition
-                        sh 'aws ecs register-task-definition --cli-input-json file://petclinic-task-definition.json'
+                        env.TASK_DEFINITION_ARN = sh(
+                            script: "aws ecs register-task-definition \
+                                        --cli-input-json file://petclinic-task-definition.json \
+                                        --query 'taskDefinition.taskDefinitionArn' \
+                                        --output text",
+                            returnStdout: true
+                        ).trim()
                     }
                 }
             }
@@ -249,10 +259,10 @@ pipeline {
                     )
                 ]) {
                     sh """
-                        aws ecs update-service \\
-                            --cluster ${env.ECS_CLUSTER_NAME} \\
-                            --service ${env.ECS_SERVICE_NAME} \\
-                            --force-new-deployment \\
+                        aws ecs update-service \
+                            --cluster ${env.ECS_CLUSTER_NAME} \
+                            --service ${env.ECS_SERVICE_NAME} \
+                            --task-definition ${env.TASK_DEFINITION_ARN} \
                             --region ${params.AWS_REGION}
                     """
                 }
