@@ -1,0 +1,17 @@
+# Default values for petclinic.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+namespace: petclinic
+
+replicaCount: 1
+
+image:
+  repository: 278336501300.dkr.ecr.eu-central-1.amazonaws.com/turb0bur/spring-petclinic
+  pullPolicy: IfNotPresent
+  tag: "536c018"
+
+service:
+  type: NodePort
+  port: 8081
+  targetPort: 8081

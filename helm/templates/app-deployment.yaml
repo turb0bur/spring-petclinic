@@ -2,9 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: petclinic-deployment
-  namespace: petclinic
+  namespace: {{ .Values.namespace }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       app: petclinic
@@ -15,9 +15,10 @@ spec:
     spec:
       imagePullSecrets:
       - name: ecr-secret
+      {{- with .Values.image }}
       containers:
       - name: petclinic
-        image: 278336501300.dkr.ecr.eu-central-1.amazonaws.com/turb0bur/spring-petclinic:da2a76f
+        image: {{ .repository }}:{{ .tag }}
         ports:
         - containerPort: 8081
         env:
@@ -46,3 +47,4 @@ spec:
             secretKeyRef:
               name: mysql-secret
               key: DB_PASSWORD
+      {{- end }}

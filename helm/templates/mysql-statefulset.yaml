@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mysql
-  namespace: petclinic
+  namespace: {{ .Values.namespace }}
 spec:
   serviceName: "mysql-headless-service"
   replicas: 1
