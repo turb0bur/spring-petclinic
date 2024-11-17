@@ -46,7 +46,7 @@ To deploy the Spring PetClinic application on AWS using Jenkins, follow these st
 
 ## Running on Minikube via Kubernetes Manifests
 
-To run the Spring PetClinic application on Minikube using Kubernetes manifests, follow these steps:
+To run the Spring PetClinic application on Minikube using a Helm chart, follow these steps:
 
 ### Start Minikube:
 
@@ -54,50 +54,27 @@ To run the Spring PetClinic application on Minikube using Kubernetes manifests, 
 minikube start
 ```
 
-### Apply Kubernetes Manifests:
+### Deploy the Helm chart
 
-Apply the manifests in the following order:
-
-1. **Namespace**:
+Navigate to the directory containing your Helm chart and install it:
 
 ```bash
-kubectl apply -f k8s/namespace.yaml
+cd helm
+helm install petclinic .
 ```
 
-2. **Secrets**:
+### Create Docker Registry Secret
+
+Before deploying the application, you need to create a Kubernetes secret for accessing your ECR (Elastic Container
+Registry). This secret will store your Docker credentials, allowing Kubernetes to pull the Docker image from ECR.
 
 ```bash
-kubectl apply -f k8s/mysql-secret.yaml
+export AWS_ACCESS_KEY_ID=<your-access-key>
+export AWS_SECRET_ACCESS_KEY=<your-secret-key>
 kubectl -n petclinic create secret docker-registry ecr-secret \
 	--docker-server 278336501300.dkr.ecr.eu-central-1.amazonaws.com \
 	--docker-username=AWS \
 	--docker-password=$(aws ecr get-login-password)
-```
-
-3. **ConfigMaps**:
-
-```bash
-kubectl apply -f k8s/app-config.yaml
-```
-
-4. **Database Statefulset**:
-
-```bash
-kubectl apply -f k8s/mysql-statefulset.yaml
-```
-
-5. **Application Deployment**:
-
-```bash
-kubectl apply -f k8s/app-deployment.yaml
-```
-
-6. **Services**:
-
-```bash
-kubectl apply -f k8s/mysql-headless-service.yaml
-kubectl apply -f k8s/mysql-service.yaml
-kubectl apply -f k8s/app-service.yaml
 ```
 
 ### Access the application:
