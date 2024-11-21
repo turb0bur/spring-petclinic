@@ -6,6 +6,7 @@ pipeline {
     environment {
         RELEASE_VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
         SPRING_PROFILES_ACTIVE = "${params.ENVIRONMENT}"
+        DOCKER_IMAGE_NAME = 'spring-petclinic'
         AWS_CREDENTIALS = 'aws-credentials'
         ECS_CLUSTER_NAME = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-cluster"
         ECS_SERVICE_NAME = "${params.AWS_REGION}-${params.ENVIRONMENT}-petclinic-service"
@@ -72,7 +73,7 @@ pipeline {
                     script {
                         if (!imageExistsInECR()) {
                             sh """
-                                docker build -t ${env.ECR_URI}:${RELEASE_VERSION} -f Dockerfile .
+                                docker build -t ${env.DOCKER_IMAGE_NAME}:${RELEASE_VERSION} -f Dockerfile .
                             """
                         } else {
                             echo "Image with tag ${RELEASE_VERSION} already exists in ECR. Skipping build."
@@ -121,7 +122,7 @@ pipeline {
         stage('Tag Docker Image') {
             steps {
                 sh """
-                    docker tag spring-petclinic:${RELEASE_VERSION} ${env.ECR_URI}:${RELEASE_VERSION}
+                    docker tag ${env.DOCKER_IMAGE_NAME}:${RELEASE_VERSION} ${env.ECR_URI}:${RELEASE_VERSION}
                 """
             }
         }
@@ -278,7 +279,7 @@ pipeline {
 }
 
 def imageExistsInECR() {
-    return sh(
+    def status = sh(
         script: """
             aws ecr describe-images \
                 --repository-name ${params.ECR_REPOSITORY} \
@@ -287,5 +288,7 @@ def imageExistsInECR() {
                 > /dev/null 2>&1
         """,
         returnStatus: true
-    ) == 0
+    )
+    echo "Image exists status: ${status}"
+    return status == 0
 }
